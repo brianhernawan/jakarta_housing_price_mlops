@@ -1,0 +1,414 @@
+{
+  "id": null,
+  "uid": "jakarta-housing-mlops",
+  "title": "Jakarta Housing Price \u2014 Model Monitoring",
+  "tags": [
+    "mlops",
+    "jakarta-housing",
+    "dibimbing"
+  ],
+  "timezone": "browser",
+  "editable": true,
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": {
+    "from": "now-15m",
+    "to": "now"
+  },
+  "templating": {
+    "list": []
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Requests per second",
+      "description": "Throughput. Should track whatever scripts/traffic.py is sending.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROMDS"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "rate(prediction_total[1m])",
+          "legendFormat": "req/s",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PROMDS"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "reqps"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Latency p95",
+      "description": "95th percentile time to serve one prediction. The model is loaded once at startup, so this should sit in the low milliseconds.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROMDS"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 8,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(prediction_latency_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p95",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PROMDS"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Active model version",
+      "description": "Which registry version the API currently holds in memory. After a rollback this only changes once /admin/reload is called.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROMDS"
+      },
+      "gridPos": {
+        "h": 7,
+        "w": 8,
+        "x": 16,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "model_version_active",
+          "legendFormat": "version",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PROMDS"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "gauge",
+      "title": "Drift score \u2014 GrLivArea",
+      "description": "|live mean - training mean| / training mean. Green below 0.20, red above 0.45. Training mean is about 1533 sq ft.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROMDS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "drift_score_gr_liv_area",
+          "legendFormat": "drift score",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PROMDS"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "min": 0,
+          "max": 1.2,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "#EAB839",
+                "value": 0.2
+              },
+              {
+                "color": "red",
+                "value": 0.45
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Mean GrLivArea \u2014 last 100 requests",
+      "description": "The size of house the API is being asked about. The flat line is the training-set mean. When the two separate, the model is being asked questions it did not study for.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROMDS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "input_gr_liv_area_mean",
+          "legendFormat": "live mean",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PROMDS"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "1533",
+          "legendFormat": "training mean",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PROMDS"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "sqft"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "timeseries",
+      "title": "Predicted price distribution (p50 / p90)",
+      "description": "Where the model's answers are landing. A shift here without a corresponding shift in reality is the shape of a silent failure.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROMDS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 0,
+        "y": 15
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.5, sum(rate(predicted_price_usd_bucket[2m])) by (le))",
+          "legendFormat": "p50",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PROMDS"
+          }
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.9, sum(rate(predicted_price_usd_bucket[2m])) by (le))",
+          "legendFormat": "p90",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PROMDS"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 8,
+            "showPoints": "never",
+            "spanNulls": true
+          },
+          "unit": "currencyUSD"
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Prediction errors (5m)",
+      "description": "THE POINT OF THE WHOLE DEMO. This stays at zero while the model degrades. Nothing crashes. The answers are just wrong.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "PROMDS"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 15
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "increase(prediction_error_total[5m])",
+          "legendFormat": "errors",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "PROMDS"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    }
+  ]
+}

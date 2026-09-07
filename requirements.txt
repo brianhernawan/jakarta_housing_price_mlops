@@ -1,0 +1,18 @@
+# Versions are pinned (==) so everyone gets identical results.
+# This is the "environment" leg of reproducibility: same code, same data,
+# same seed, same environment.
+#
+# Verified to install and work together on Python 3.11-3.13, including
+# Apple Silicon (arm64).
+
+mlflow==3.15.1
+scikit-learn==1.9.0
+pandas==2.3.3
+numpy==2.5.2
+scipy==1.18.1
+joblib==1.5.3
+fastapi==0.141.1
+uvicorn[standard]==0.52.4
+pydantic==2.13.4
+prometheus-client==0.26.0
+requests==2.34.2

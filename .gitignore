@@ -1,0 +1,21 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+.env
+
+# MLflow local backend and artifact store
+mlruns/
+mlflow.db
+
+# Generated data and models — reproduce with `make data` and `make train`
+data/*.csv
+!data/raw/train.csv
+!data/raw/test.csv
+models/champion/
+models/feature_spec.json
+models/train_profile.json
+
+logs/*.log
+.DS_Store
+.vscode/

@@ -1,0 +1,13 @@
+# So Grafana knows where Prometheus is without anyone clicking through a form.
+apiVersion: 1
+datasources:
+  - name: Prometheus
+    type: prometheus
+    # This uid is referenced by dashboards/house_price.json.
+    # If the uid is not pinned, Grafana generates a random one and every
+    # panel shows "No data".
+    uid: PROMDS
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: true

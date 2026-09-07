@@ -1,0 +1,11 @@
+# Prometheus PULLS metrics. The API does not push them.
+global:
+  scrape_interval: 5s          # 15s is normal in production; 5s shows up faster in a demo
+
+scrape_configs:
+  - job_name: "jakarta-housing-api"
+    metrics_path: /metrics
+    static_configs:
+      # "api" is the service name from docker-compose.yml, not localhost.
+      # Inside the Docker network, containers reach each other by service name.
+      - targets: ["api:8000"]

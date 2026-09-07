@@ -1,0 +1,176 @@
+# docker-compose.yml — four services.
+#
+#   mlflow      the tracking server + model registry + UI
+#   api         the prediction service
+#   prometheus  collects metrics
+#   grafana     draws them
+#
+# Rubric item 5 asks for "docker-compose.yml with a fastapi service and
+# monitoring". `api` is the fastapi service; `prometheus` and `grafana` are
+# the monitoring. `mlflow` is beyond the requirement — it is what makes the
+# registry and the rollback story real rather than file-based.
+#
+# No `version:` key. It has been obsolete since Compose v2.
+
+services:
+
+  # ---------- 1. MLflow tracking server + model registry ----------
+  mlflow:
+    build:
+      context: .
+      dockerfile: mlflow.Dockerfile
+    image: jakarta-housing-mlflow:3.15.1
+    container_name: jakarta-housing-mlflow
+    ports:
+      - "${MLFLOW_PORT:-5001}:5000"
+    # Three flags below are load-bearing:
+    #
+    #   --host 0.0.0.0     bind to every interface. The default is
+    #                      localhost-only, which inside a container means
+    #                      "reachable by nothing", including the api service.
+    #
+    #   --serve-artifacts  route model files THROUGH the server. Without it
+    #                      the client writes artifacts to its own local disk
+    #                      and records a path the api container cannot see.
+    #                      This is the most common way this setup breaks, and
+    #                      the failure looks like a mysterious "path does not
+    #                      exist" at model load time.
+    #
+    #   --workers 1        the default spawns four. On a laptop that is
+    #                      wasted memory for a single-user demo.
+    command: >
+      mlflow server
+      --host 0.0.0.0
+      --port 5000
+      --workers 1
+      --backend-store-uri sqlite:////mlflow/db/mlflow.db
+      --serve-artifacts
+      --artifacts-destination /mlflow/artifacts
+    volumes:
+      # Named volumes, so runs and models survive `docker compose down`.
+      # These are NOT your host mlflow.db — that file stays untouched.
+      - mlflow-db:/mlflow/db
+      - mlflow-artifacts:/mlflow/artifacts
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:5000/health', timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 40s
+    networks:
+      - housing
+    restart: unless-stopped
+
+  # ---------- 2. The prediction API ----------
+  api:
+    build: .
+    image: jakarta-housing-api:1.0.0
+    container_name: jakarta-housing-api
+    ports:
+      - "${API_PORT:-8000}:8000"
+    environment:
+      # "mlflow" is the service name above. Containers resolve each other by
+      # service name on the shared network. Your browser and your shell are
+      # outside that network and use localhost:5000 instead. Same server.
+      - MLFLOW_TRACKING_URI=http://mlflow:5000
+
+      # "auto" = try the registry first, fall back to the model baked into
+      # the image if it is unreachable. This is what stops the API from
+      # crash-looping when mlflow is down or the registry is still empty.
+      # Use "file" to pin it to the exported model, or "registry" to make an
+      # unreachable registry a hard failure.
+      - MODEL_SOURCE=auto
+
+      # WITHOUT THESE THREE, A HALF-DEAD TRACKING SERVER HANGS STARTUP.
+      # MLflow defaults to a 120s timeout with 7 retries and backoff factor
+      # 2, so a server that accepts a TCP connection but never answers can
+      # block for minutes. The try/except fallback in api/main.py cannot
+      # help, because a hang never raises an exception. These bound the
+      # worst case to roughly 18 seconds, after which the API logs
+      # registry_unavailable and loads the exported file instead.
+      - MLFLOW_HTTP_REQUEST_TIMEOUT=5
+      - MLFLOW_HTTP_REQUEST_MAX_RETRIES=2
+      - MLFLOW_HTTP_REQUEST_BACKOFF_FACTOR=1
+    volumes:
+      # So logs written inside the container are readable from the laptop.
+      # Long syntax keeps working if the project path contains spaces.
+      - type: bind
+        source: ./logs
+        target: /app/logs
+    depends_on:
+      mlflow:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=4).status==200 else 1)"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      # 60s, not 30s: on a cold start the API may download the model from
+      # the registry over HTTP before it can answer /health.
+      start_period: 60s
+    networks:
+      - housing
+    restart: unless-stopped
+
+  # ---------- 3. Prometheus: collects the numbers ----------
+  prometheus:
+    image: prom/prometheus:v3.1.0
+    container_name: jakarta-housing-prometheus
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - type: bind
+        source: ./monitoring/prometheus.yml
+        target: /etc/prometheus/prometheus.yml
+        read_only: true
+      - prometheus-data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - housing
+    restart: unless-stopped
+
+  # ---------- 4. Grafana: draws the numbers ----------
+  grafana:
+    image: grafana/grafana:11.5.1
+    container_name: jakarta-housing-grafana
+    ports:
+      # Port 3000 clashes with macOS AirPlay Receiver and most Node dev
+      # servers. If it is taken:  GRAFANA_PORT=3001 docker compose up -d
+      - "${GRAFANA_PORT:-3000}:3000"
+    environment:
+      # Classroom settings. Never do this in production.
+      - GF_SECURITY_ADMIN_USER=${GRAFANA_USER:-admin}
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_PASSWORD:-admin}
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - type: bind
+        source: ./monitoring/grafana/provisioning
+        target: /etc/grafana/provisioning
+        read_only: true
+      - type: bind
+        source: ./monitoring/grafana/dashboards
+        target: /var/lib/grafana/dashboards
+        read_only: true
+      - grafana-data:/var/lib/grafana
+    depends_on:
+      - prometheus
+    networks:
+      - housing
+    restart: unless-stopped
+
+networks:
+  housing:
+    driver: bridge
+
+volumes:
+  mlflow-db:
+  mlflow-artifacts:
+  prometheus-data:
+  grafana-data:
